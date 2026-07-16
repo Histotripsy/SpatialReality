@@ -107,4 +107,4 @@ if(EXISTS ${XR_DIR}/bin)
     )
 endif()
 
-message(STATUS "Configuring ${PROJECT_TARGET}")
+message(STATUS "Configuring ${PROJECT_NAME}")

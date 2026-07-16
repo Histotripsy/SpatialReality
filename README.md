@@ -151,6 +151,16 @@ presenter.present()  # after each scene update
 
 Prebuilding **only** our `SRDBridge.dll` (without Sony libs) is still legally murky because it is compiled against Sony’s proprietary headers and linked with `xr_api.lib`. Prefer **source-only** releases unless Sony confirms redistribution of that binary is allowed. Each user should download the Native API themselves and run `python scripts/build_dll.py`.
 
+## Troubleshooting head tracking
+
+If looking from above/below makes the scene **slide with your head** instead of staying world-locked, rebuild the DLL after pulling (projection + buffer orientation fixes live in `src/SRDBridge.cpp` / `spatial_reality/gl.py`):
+
+```bat
+python scripts/build_dll.py --force
+```
+
+If left/right still looks reversed relative to the Qt preview, pass ``mirror_x=True`` to ``StereoPresenter`` / ``SRDAppAbstract`` (or ``--mirror-x`` on the demos). The NativeAPI sample default is no extra X mirror.
+
 ## License
 
 - **This repository:** [MIT](LICENSE) (see also [NOTICE](NOTICE))

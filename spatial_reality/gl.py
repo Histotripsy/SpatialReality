@@ -158,11 +158,18 @@ def qimage_to_rgba(qimg: QtGui.QImage) -> np.ndarray:
 
 
 def read_rgba_from_gl(width: int, height: int) -> np.ndarray:
-    """Read the current GL framebuffer as top-left-origin RGBA uint8."""
+    """
+    Read the current GL framebuffer as RGBA uint8 in **OpenGL row order**
+    (first row = bottom of the image).
+
+    Keep this orientation when uploading via ``glTexSubImage2D`` and submit
+    with ``flip_y=False`` so the SRD compositor sees an upright view.  An
+    extra CPU ``flipud`` here used to invert head-tracked vertical parallax
+    (looking from above made the scene slide the wrong way).
+    """
     GL.glPixelStorei(GL.GL_PACK_ALIGNMENT, 1)
     raw = GL.glReadPixels(0, 0, width, height, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE)
-    arr = np.frombuffer(raw, dtype=np.uint8).reshape(height, width, 4)
-    return np.flipud(arr).copy()
+    return np.frombuffer(raw, dtype=np.uint8).reshape(height, width, 4).copy()
 
 
 # ---------------------------------------------------------------------------
@@ -335,6 +342,8 @@ class StereoPresenter:
 
     The Qt widget remains a normal interactive orbit preview.  Scale,
     translation, and optional X-mirror are applied only while presenting.
+    ``mirror_x`` defaults to False (NativeAPI sample convention); enable it
+    only if left/right on the SRD looks reversed relative to the preview.
     """
 
     def __init__(
@@ -346,7 +355,7 @@ class StereoPresenter:
         world_scale: Optional[float] = None,
         scene_translation: Optional[Sequence[float]] = None,
         center_scene: bool = True,
-        mirror_x: bool = True,
+        mirror_x: bool = False,
         near_z: float = 1.0,
         far_z: float = 1000.0,
         render_scale: Optional[float] = 0.5,
@@ -719,7 +728,7 @@ class SRDAppAbstract(QtCore.QObject):
         *,
         units: str = "mm",
         display_magnification: float = 10.0,
-        mirror_x: bool = True,
+        mirror_x: bool = False,
         render_scale: float | None = 0.5,
         show_preview: bool = True,
         world_scale: float | None = None,

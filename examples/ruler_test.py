@@ -148,7 +148,7 @@ class RulerTest(SRDAppAbstract):
     def __init__(self, length_mm=10.0, *args, **kwargs):
         kwargs.setdefault("units", "mm")
         kwargs.setdefault("display_magnification", 10.0)
-        kwargs.setdefault("mirror_x", True)
+        kwargs.setdefault("mirror_x", False)
         kwargs.setdefault("render_scale", 0.5)
         kwargs.setdefault("show_preview", True)
         super().__init__(*args, **kwargs)
@@ -285,7 +285,12 @@ def main(argv=None):
         help="Fullscreen Qt preview on a desktop monitor (not the SRD)",
     )
     p.add_argument("--no-preview", action="store_true")
-    p.add_argument("--mirror-x", action="store_true", default=True)
+    p.add_argument(
+        "--mirror-x",
+        action="store_true",
+        default=False,
+        help="Mirror world X on SRD cameras only (if L/R looks wrong)",
+    )
     p.add_argument("--no-mirror-x", action="store_false", dest="mirror_x")
     args = p.parse_args(argv)
 
