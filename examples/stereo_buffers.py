@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-
 import numpy as np
+
 from pathlib import Path
 import sys
 _ROOT = Path(__file__).resolve().parents[1]

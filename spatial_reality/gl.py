@@ -60,16 +60,13 @@ def qmatrix_to_np(mat: QtGui.QMatrix4x4) -> np.ndarray:
 
 def preview_orbit_matrix(view) -> np.ndarray:
     """
-    Model-space orbit from the Qt camera (scene units), **without** distance.
+    Model-space orbit from the Qt camera (scene units), without distance.
 
-    Used as ``view_eye @ world @ orbit`` so the SRD shows the same pose as
-    the preview.  Pan comes from ``opts['center']``; wheel ``distance`` is
-    omitted so SRD scale stays fixed.
+    Composed as ``view_eye @ world @ orbit``. Pan uses ``opts['center']``;
+    wheel ``distance`` is omitted so SRD object scale stays fixed.
 
-    Elevation uses ``elev`` (not Qt's viewMatrix ``elev-90``).  The ``-90``
-    is an OpenGL camera-pitch offset in ``GLViewWidget.viewMatrix``; applying
-    it as a model transform on top of the SRD eye view tipped the object
-    toward a top-down view.
+    Pitch uses ``elev - 135`` (calibrated against the SRD eye view). Qt's
+    ``GLViewWidget.viewMatrix`` uses ``elev - 90`` for its own OpenGL camera.
     """
     opts = getattr(view, "opts", None) or {}
     tr = QtGui.QMatrix4x4()
@@ -78,8 +75,8 @@ def preview_orbit_matrix(view) -> np.ndarray:
     else:
         elev = float(opts.get("elevation", 30.0))
         azim = float(opts.get("azimuth", 45.0))
-        tr.rotate(elev - 135, 1, 0, 0)
-        tr.rotate(azim + 90, 0, 0, -1)
+        tr.rotate(elev - 135.0, 1, 0, 0)
+        tr.rotate(azim + 90.0, 0, 0, -1)
     center = opts.get("center")
     if center is not None:
         tr.translate(-float(center.x()), -float(center.y()), -float(center.z()))
@@ -183,26 +180,11 @@ def configure_surface_format() -> None:
         pass
     QtGui.QSurfaceFormat.setDefaultFormat(fmt)
 
-def qimage_to_rgba(qimg: QtGui.QImage) -> np.ndarray:
-    qimg = qimg.convertToFormat(QtGui.QImage.Format_RGBA8888)
-    w, h = qimg.width(), qimg.height()
-    ptr = qimg.bits()
-    ptr.setsize(w * h * 4)
-    return np.frombuffer(ptr, dtype=np.uint8).reshape(h, w, 4).copy()
-
 
 def read_rgba_from_gl(width: int, height: int) -> np.ndarray:
     """
-    Read the current GL framebuffer as RGBA uint8 in OpenGL row order
-    (row 0 = bottom of the image).
-
-    Do **not** CPU-``flipud`` here.  The OpenXR / NativeAPI present path
-    expects GL-native orientation; pass ``flip_y=True`` to
-    ``submit_stereo`` / ``SubmitOpengl`` so the compositor treats the
-    buffer as bottom-left origin.  CPU-flipping while submitting with
-    ``flip_y=False`` made the SBS image upright on a 2D blit but inverted
-    head-tracked vertical parallax; submitting upside-down with
-    ``flip_y=False`` made content mirrored/flipped and slide on-screen.
+    Read the current GL framebuffer as RGBA uint8 (OpenGL row order:
+    row 0 = bottom).  Submit with ``flip_y=True``.
     """
     GL.glPixelStorei(GL.GL_PACK_ALIGNMENT, 1)
     raw = GL.glReadPixels(0, 0, width, height, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE)
@@ -377,14 +359,11 @@ class StereoPresenter:
     """
     Render an ``SRDGLViewWidget`` scene for both SRD eyes and submit RGBA.
 
-    The Qt widget remains a normal interactive orbit preview.  World scale
-    (units / magnification) is applied while presenting.  With
-    ``follow_preview_camera=True`` (default), the SRD uses the Qt orbit
-    **rotation** and **pan** as the viewing pose (WYSIWYG with the preview
-    at every pose, including the default); wheel **distance** is ignored so
-    object scale stays fixed.  Eye tracking contributes only a head-relative
-    stereo offset (not a second look-at), so elevation is not double-applied.
-    ``mirror_x`` applies only when follow is off (legacy head-tracked framing).
+    The Qt widget is a normal interactive orbit preview.  While presenting,
+    world scale (units / magnification) is applied and — with
+    ``follow_preview_camera=True`` (default) — the preview orbit rotation and
+    pan are applied on the SRD as well.  Wheel zoom affects only the desktop
+    preview distance; SRD object scale stays fixed.
     """
 
     def __init__(
@@ -396,7 +375,6 @@ class StereoPresenter:
         world_scale: Optional[float] = None,
         scene_translation: Optional[Sequence[float]] = None,
         center_scene: bool = True,
-        mirror_x: bool = True,
         follow_preview_camera: bool = True,
         near_z: float = 1.0,
         far_z: float = 1000.0,
@@ -416,7 +394,6 @@ class StereoPresenter:
         )
         self._scene_translation_arg = scene_translation
         self.center_scene = bool(center_scene)
-        self.mirror_x = bool(mirror_x)
         self.follow_preview_camera = bool(follow_preview_camera)
         self.near_z = float(near_z)
         self.far_z = float(far_z)
@@ -480,22 +457,12 @@ class StereoPresenter:
         if srd.is_initialized():
             srd.shutdown()
 
-    def capture_preview_pose(self) -> None:
-        """
-        No-op kept for API compatibility.
-
-        Follow mode applies the absolute Qt orbit pose each frame (WYSIWYG),
-        so there is no separate home reference to capture.
-        """
-        return
-
     def set_world_transform(
         self,
         scale: Optional[float] = None,
         translation: Optional[Sequence[float]] = None,
         units: Optional[str] = None,
         display_magnification: Optional[float] = None,
-        mirror_x: Optional[bool] = None,
         center_scene: Optional[bool] = None,
     ) -> None:
         if units is not None:
@@ -519,8 +486,6 @@ class StereoPresenter:
                 self._scene_translation_arg,
                 center_scene=self.center_scene,
             )
-        if mirror_x is not None:
-            self.mirror_x = bool(mirror_x)
         self._world_matrix = make_world_matrix(
             abs(float(self.world_scale)), self.scene_translation
         )
@@ -654,12 +619,7 @@ class StereoPresenter:
         if self._saved_fov is not None:
             self.view.opts["fov"] = self._saved_fov
             self._saved_fov = None
-        for entry in self._scatter_size_backup:
-            if len(entry) == 3:
-                item, size, px_mode = entry
-            else:
-                item, size = entry
-                px_mode = False
+        for item, size, px_mode in self._scatter_size_backup:
             item.size = size
             item.pxMode = px_mode
             try:
@@ -676,17 +636,10 @@ class StereoPresenter:
         world = np.asarray(self._world_matrix, dtype=np.float32).reshape(4, 4)
 
         if self.follow_preview_camera and self.view is not None:
-            # Absolute orbit as model transform; keep real eye views for
-            # head-tracked depth/parallax and correct on-screen scale.
             orbit = preview_orbit_matrix(self.view)
             view = view_eye @ world @ orbit
         else:
-            if self.mirror_x:
-                mirror = np.eye(4, dtype=np.float32)
-                mirror[0, 0] = -1.0
-                view = view_eye @ mirror @ world
-            else:
-                view = view_eye @ world
+            view = view_eye @ world
 
         proj = srd.projection_matrix(eye, self.near_z, self.far_z)
         return view, proj, eye_pos_cm
@@ -752,7 +705,6 @@ class StereoPresenter:
         try:
             left = self._render_eye_rgba(srd.EYE_LEFT)
             right = self._render_eye_rgba(srd.EYE_RIGHT)
-            # GL readback is bottom-left origin; tell SubmitOpengl via flip_y.
             srd.submit_stereo(left, right, flip_y=True)
         except Exception as exc:
             print(f"StereoPresenter present skipped: {exc}")
@@ -773,15 +725,13 @@ class StereoPresenter:
 # ---------------------------------------------------------------------------
 class SRDAppAbstract(QtCore.QObject):
     """
-    Minimal helper that owns an ``SRDGLViewWidget`` + ``StereoPresenter``
-    pair, forwards Qt key events to the demo subclass, and gives subclasses
-    a single ``_setupWindow()`` hook to build their scene in.
+    Owns an ``SRDGLViewWidget`` + ``StereoPresenter``, forwards Qt key events,
+    and gives subclasses a ``_setupWindow()`` hook.
 
     Subclasses should:
-      - override ``_setupWindow()`` to add items to ``self.win`` and start
-        whatever ``QTimer`` drives their animation,
-      - call ``self.present_to_srd()`` once per frame from that timer,
-      - override ``keyPressEvent(self, ev)`` if they want key handling.
+      - override ``_setupWindow()`` to add items to ``self.win`` and start timers,
+      - call ``self.present_to_srd()`` once per frame,
+      - override ``keyPressEvent`` for key handling.
     """
 
     def __init__(
@@ -789,7 +739,6 @@ class SRDAppAbstract(QtCore.QObject):
         *,
         units: str = "mm",
         display_magnification: float = 10.0,
-        mirror_x: bool = True,
         follow_preview_camera: bool = True,
         render_scale: float | None = 0.5,
         show_preview: bool = True,
@@ -801,17 +750,15 @@ class SRDAppAbstract(QtCore.QObject):
         dll_path=None,
     ):
         super().__init__()
+        configure_surface_format()
         self.units = units
         self.display_magnification = float(display_magnification)
-        self.mirror_x = mirror_x
         self.follow_preview_camera = follow_preview_camera
         self.render_scale = render_scale
         self.show_preview = show_preview
 
-        # The GL widget itself -- usable directly as a normal interactive
-        # pyqtgraph.opengl.GLViewWidget for the desktop preview.
         self.win = SRDGLViewWidget()
-        self.win.keyPressEvent = self.keyPressEvent  # forward key events to demo
+        self.win.keyPressEvent = self.keyPressEvent
 
         self.presenter = StereoPresenter(
             self.win,
@@ -820,7 +767,6 @@ class SRDAppAbstract(QtCore.QObject):
             world_scale=world_scale,
             scene_translation=scene_translation,
             center_scene=center_scene,
-            mirror_x=mirror_x,
             follow_preview_camera=follow_preview_camera,
             near_z=near_z,
             far_z=far_z,
@@ -833,6 +779,9 @@ class SRDAppAbstract(QtCore.QObject):
     def onStart(self) -> None:
         """Start (or bind to) the SRD session, then build the scene."""
         self.presenter.start_session()
+        self.world_scale = self.presenter.world_scale
+        self.scene_translation = self.presenter.scene_translation
+        self.center_scene = self.presenter.center_scene
         self._setupWindow()
 
     def onExit(self) -> None:
@@ -844,31 +793,26 @@ class SRDAppAbstract(QtCore.QObject):
     def _setupWindow(self) -> None:
         raise NotImplementedError
 
-    def keyPressEvent(self, ev) -> None:  # override in subclasses
+    def keyPressEvent(self, ev) -> None:
         pass
-    
+
     def set_world_transform(
         self,
         scale: Optional[float] = None,
         translation: Optional[Sequence[float]] = None,
         units: Optional[str] = None,
         display_magnification: Optional[float] = None,
-        mirror_x: Optional[bool] = None,
         center_scene: Optional[bool] = None,
     ) -> None:
-        if self.presenter is None:
-            return
         self.presenter.set_world_transform(
             scale=scale,
             translation=translation,
             units=units,
             display_magnification=display_magnification,
-            mirror_x=mirror_x,
             center_scene=center_scene,
         )
         self.units = self.presenter.units
         self.display_magnification = self.presenter.display_magnification
         self.world_scale = self.presenter.world_scale
         self.scene_translation = self.presenter.scene_translation
-        self.mirror_x = self.presenter.mirror_x
         self.center_scene = self.presenter.center_scene

@@ -148,7 +148,6 @@ class RulerTest(SRDAppAbstract):
     def __init__(self, length_mm=10.0, *args, **kwargs):
         kwargs.setdefault("units", "mm")
         kwargs.setdefault("display_magnification", 10.0)
-        kwargs.setdefault("mirror_x", True)
         kwargs.setdefault("render_scale", 0.5)
         kwargs.setdefault("show_preview", True)
         super().__init__(*args, **kwargs)
@@ -209,32 +208,6 @@ class RulerTest(SRDAppAbstract):
     def _tick(self):
         self.present_to_srd()
 
-    def set_world_transform(
-        self,
-        scale= None,
-        translation= None,
-        units= None,
-        display_magnification= None,
-        mirror_x= None,
-        center_scene= None,
-    ) -> None:
-        if self.presenter is None:
-            return
-        self.presenter.set_world_transform(
-            scale=scale,
-            translation=translation,
-            units=units,
-            display_magnification=display_magnification,
-            mirror_x=mirror_x,
-            center_scene=center_scene,
-        )
-        self.units = self.presenter.units
-        self.display_magnification = self.presenter.display_magnification
-        self.world_scale = self.presenter.world_scale
-        self.scene_translation = self.presenter.scene_translation
-        self.mirror_x = self.presenter.mirror_x
-        self.center_scene = self.presenter.center_scene
-
     def keyPressEvent(self, ev):
         key = ev.key()
         changed = False
@@ -285,18 +258,6 @@ def main(argv=None):
         help="Fullscreen Qt preview on a desktop monitor (not the SRD)",
     )
     p.add_argument("--no-preview", action="store_true")
-    p.add_argument(
-        "--mirror-x",
-        action="store_true",
-        default=True,
-        help="Mirror world X on SRD cameras (default; matches Qt L/R)",
-    )
-    p.add_argument(
-        "--no-mirror-x",
-        action="store_false",
-        dest="mirror_x",
-        help="Disable X mirror if SRD L/R already matches the preview",
-    )
     args = p.parse_args(argv)
 
     rs = str(args.render_scale).strip().lower()
@@ -307,11 +268,7 @@ def main(argv=None):
 
     app = QtWidgets.QApplication([])
 
-    # Let Ctrl-C quit the app instead of being swallowed by Qt's event loop.
     signal.signal(signal.SIGINT, lambda *args: app.quit())
-    # Qt's C++ event loop never hands control back to the Python interpreter
-    # (which is where signal handlers actually run) unless something wakes
-    # it up periodically -- this no-op timer does that.
     _sigint_timer = QtCore.QTimer()
     _sigint_timer.timeout.connect(lambda: None)
     _sigint_timer.start(200)
@@ -322,7 +279,6 @@ def main(argv=None):
         display_magnification=args.magnification,
         render_scale=render_scale,
         show_preview=not args.no_preview,
-        mirror_x=args.mirror_x,
     )
     demo.onStart()
     if demo.show_preview:
@@ -331,7 +287,6 @@ def main(argv=None):
         )
         demo.win.resize(900, 700)
         demo.win.show()
-    demo.onStart()
     app.exec_()
     demo.onExit()
 

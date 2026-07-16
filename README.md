@@ -86,9 +86,10 @@ from spatial_reality import bridge
 from spatial_reality.gl import SRDGLViewWidget, StereoPresenter, SRDAppAbstract
 ```
 
-Examples assume the package is installed (or the repo root is on `PYTHONPATH`):
+Examples assume the package is installed:
 
 ```bat
+python examples/pose_orbit_test.py
 python examples/gl_view_demo.py
 python examples/stereo_buffers.py
 ```
@@ -137,6 +138,10 @@ presenter = StereoPresenter(win, units="mm", display_magnification=10, init_sess
 presenter.present()  # after each scene update
 ```
 
+`StereoPresenter` / `SRDAppAbstract` follow the Qt orbit camera by default
+(`follow_preview_camera=True`): rotation and pan match the preview; wheel zoom
+does not change SRD scale. See `examples/pose_orbit_test.py`.
+
 ## Releases / packaging (important)
 
 **Do not** put Sony’s `NativeAPI-*.zip`, `XR_API` headers/libs, Settings installer, or Sony runtime DLLs in GitHub Releases, CI artifacts, or pip wheels — including by having an agent download them from Sony and re-upload. Headers are marked `Sony CONFIDENTIAL` / do not redistribute; Sony’s EULAs generally forbid sharing or redistributing the software. Automating the download does not change that.
@@ -151,23 +156,21 @@ presenter.present()  # after each scene update
 
 Prebuilding **only** our `SRDBridge.dll` (without Sony libs) is still legally murky because it is compiled against Sony’s proprietary headers and linked with `xr_api.lib`. Prefer **source-only** releases unless Sony confirms redistribution of that binary is allowed. Each user should download the Native API themselves and run `python scripts/build_dll.py`.
 
-## Troubleshooting head tracking
+## Head tracking / preview follow
 
-Head-tracked content should stay **world-locked** in the display volume (parallax only; no screen-plane sliding). Rebuild the DLL after pulling:
+Content should stay **world-locked** in the display volume (parallax only).
+Rebuild the DLL after pulling native changes:
 
 ```bat
 python scripts/build_dll.py --force
 ```
 
-Presentation uses OpenGL-native framebuffer orientation with ``flip_y=True`` on submit (same idea as the OpenXR demo rendering straight into a GL swapchain — no CPU ``flipud``). Projection half-angles are applied as signed frustum edges, matching OpenXR ``CreateProjectionFov(GRAPHICS_OPENGL)``.
+By default the Qt orbit camera drives SRD rotation and pan
+(`follow_preview_camera=True`); wheel zoom is preview-only. Verify with:
 
-``mirror_x`` defaults to **True** so SRD left/right matches the Qt preview. Pass ``mirror_x=False`` / ``--no-mirror-x`` only if L/R is already correct.
-
-By default ``follow_preview_camera=True``: the SRD shows the same orbit
-**rotation** / **pan** as the Qt preview (absolute WYSIWYG; wheel zoom does
-not change SRD scale). Head tracking still adds stereo parallax. Use
-``examples/pose_orbit_test.py`` to verify (expect blue up, red left, green
-right, yellow front on both).
+```bat
+python examples/pose_orbit_test.py
+```
 
 ## License
 

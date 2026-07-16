@@ -71,7 +71,7 @@ XR_API void SRD_SetLogLevel(int level);
 /**
  * freopen CRT stdout/stderr to NUL.
  * Call only AFTER Python has rebound sys.stdout/sys.stderr onto duplicated
- * console file descriptors (see srd_bridge._silence_client_stdio).
+ * console file descriptors (see spatial_reality.bridge.silence_client_stdio).
  * Silences native "[client] …" / "fail: send…" printf spam.
  */
 XR_API void SRD_MuteCrtStdio(void);

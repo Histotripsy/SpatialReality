@@ -1,9 +1,8 @@
 """
-Minimal pyqtgraph scene on the SRD using only SRDGLViewWidget + StereoPresenter.
+Minimal pyqtgraph scene on the SRD using SRDGLViewWidget + StereoPresenter.
 """
 
 from __future__ import annotations
-
 
 import numpy as np
 import pyqtgraph.opengl as gl
@@ -14,7 +13,7 @@ import sys
 _ROOT = Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
-from spatial_reality.gl import SRDGLViewWidget, StereoPresenter, apply_gl_context_patch, configure_surface_format
+from spatial_reality.gl import SRDGLViewWidget, StereoPresenter, configure_surface_format
 
 
 def main():
@@ -26,7 +25,6 @@ def main():
     win.resize(960, 540)
     win.setCameraPosition(distance=60, elevation=20, azimuth=45)
     win.setBackgroundColor("k")
-    apply_gl_context_patch(win)
 
     n = 800
     rng = np.random.default_rng(0)

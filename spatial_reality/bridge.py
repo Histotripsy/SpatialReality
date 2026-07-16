@@ -440,10 +440,6 @@ def silence_client_stdio() -> bool:
     return muted
 
 
-# Backwards-compatible private alias
-_silence_client_stdio = silence_client_stdio
-
-
 def set_log_level(level: Union[str, int] = "off") -> None:
     """
     Filter XR runtime logs routed through SetDebugLogCallback.
@@ -683,11 +679,6 @@ def submit_texture(texture_id: int, flip_y: bool = False) -> None:
 
 def make_current() -> None:
     _require(_dll_or_raise().SRD_MakeCurrent(), "SRD_MakeCurrent")
-
-
-# Backwards-compatible aliases used by early drafts
-get_projection = projection_matrix
-submit_texture_sbs = submit_rgba
 
 
 class SRDSession:
