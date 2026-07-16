@@ -163,6 +163,8 @@ Presentation uses OpenGL-native framebuffer orientation with ``flip_y=True`` on 
 
 ``mirror_x`` defaults to **True** so SRD left/right matches the Qt preview. Pass ``mirror_x=False`` / ``--no-mirror-x`` only if L/R is already correct.
 
+By default ``follow_preview_camera=True``: orbit **rotation** and **pan** in the Qt window are applied on the SRD (wheel zoom does not change SRD scale). Use ``examples/pose_orbit_test.py`` to verify.
+
 ## License
 
 - **This repository:** [MIT](LICENSE) (see also [NOTICE](NOTICE))

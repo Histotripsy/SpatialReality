@@ -52,6 +52,35 @@ def np_to_qmatrix(mat4: np.ndarray) -> QtGui.QMatrix4x4:
     return QtGui.QMatrix4x4(*m.reshape(16).tolist())
 
 
+def qmatrix_to_np(mat: QtGui.QMatrix4x4) -> np.ndarray:
+    """Convert a QMatrix4x4 to a mathematical (row, col) numpy 4x4."""
+    # PyQt's copyDataTo() is row-major (matches the 16-arg QMatrix4x4 ctor).
+    return np.array(mat.copyDataTo(), dtype=np.float32).reshape(4, 4)
+
+
+def preview_orbit_matrix(view) -> np.ndarray:
+    """
+    Qt orbit pose as a 4x4 (scene units), **without** the distance dolly.
+
+    Matches ``GLViewWidget.viewMatrix`` rotation + look-at translation, but
+    omits ``translate(0, 0, -distance)`` so wheel-zoom does not change SRD
+    object scale.  Use rotation (azimuth/elevation) and pan (center) only.
+    """
+    opts = getattr(view, "opts", None) or {}
+    tr = QtGui.QMatrix4x4()
+    if opts.get("rotationMethod") == "quaternion" and "rotation" in opts:
+        tr.rotate(opts["rotation"])
+    else:
+        elev = float(opts.get("elevation", 30.0))
+        azim = float(opts.get("azimuth", 45.0))
+        tr.rotate(elev - 90.0, 1, 0, 0)
+        tr.rotate(azim + 90.0, 0, 0, -1)
+    center = opts.get("center")
+    if center is not None:
+        tr.translate(-float(center.x()), -float(center.y()), -float(center.z()))
+    return qmatrix_to_np(tr)
+
+
 def make_world_matrix(
     scale: float = 1.0,
     translation: Sequence[float] = (0.0, 0.0, 0.0),
@@ -343,11 +372,12 @@ class StereoPresenter:
     """
     Render an ``SRDGLViewWidget`` scene for both SRD eyes and submit RGBA.
 
-    The Qt widget remains a normal interactive orbit preview.  Scale,
-    translation, and optional X-mirror are applied only while presenting.
-    ``mirror_x`` defaults to True so SRD left/right matches the Qt preview
-    (NativeAPI tracking already reflects X/Z; this undoes the L/R swap on
-    the display).  Pass ``False`` only if your content already matches.
+    The Qt widget remains a normal interactive orbit preview.  World scale
+    (units / magnification) and optional X-mirror are applied while
+    presenting.  With ``follow_preview_camera=True`` (default), orbit
+    **rotation** and **pan** from the Qt camera are applied on the SRD as
+    well; wheel **distance** is ignored so object scale stays fixed.
+    ``mirror_x`` defaults to True so SRD left/right matches the Qt preview.
     """
 
     def __init__(
@@ -360,6 +390,7 @@ class StereoPresenter:
         scene_translation: Optional[Sequence[float]] = None,
         center_scene: bool = True,
         mirror_x: bool = True,
+        follow_preview_camera: bool = True,
         near_z: float = 1.0,
         far_z: float = 1000.0,
         render_scale: Optional[float] = 0.5,
@@ -379,6 +410,7 @@ class StereoPresenter:
         self._scene_translation_arg = scene_translation
         self.center_scene = bool(center_scene)
         self.mirror_x = bool(mirror_x)
+        self.follow_preview_camera = bool(follow_preview_camera)
         self.near_z = float(near_z)
         self.far_z = float(far_z)
         self.render_scale = render_scale
@@ -390,6 +422,7 @@ class StereoPresenter:
         self.render_h = 0
         self.scene_translation = (0.0, 0.0, 0.0)
         self._world_matrix = np.eye(4, dtype=np.float32)
+        self._preview_ref: Optional[np.ndarray] = None
         self._srd_ready = False
         self._gl_ready = False
         self._scatter_size_backup = []
@@ -438,8 +471,39 @@ class StereoPresenter:
         self._gl_ready = False
         self._srd_fbo = None
         self._srd_fbo_size = (0, 0)
+        self._preview_ref = None
         if srd.is_initialized():
             srd.shutdown()
+
+    def capture_preview_pose(self) -> None:
+        """
+        Treat the current Qt orbit pose as the SRD home pose.
+
+        Relative rotation/pan from this reference are applied on the SRD
+        when ``follow_preview_camera`` is enabled.  Call after resetting the
+        preview camera (e.g. key ``R``) so home matches again.
+        """
+        if self.view is None:
+            self._preview_ref = None
+            return
+        self._preview_ref = preview_orbit_matrix(self.view)
+
+    def _preview_model_delta(self) -> np.ndarray:
+        """Model-space delta from the captured Qt orbit reference (no zoom)."""
+        if not self.follow_preview_camera or self.view is None:
+            return np.eye(4, dtype=np.float32)
+        cur = preview_orbit_matrix(self.view)
+        if self._preview_ref is None:
+            self._preview_ref = cur.copy()
+            return np.eye(4, dtype=np.float32)
+        # Viewing with V_cur is like V_ref after model transform
+        # delta = inv(V_ref) @ V_cur.  Apply that delta on the SRD so orbit
+        # rotation/pan matches the Qt preview (distance still ignored).
+        try:
+            delta = np.linalg.inv(self._preview_ref) @ cur
+        except np.linalg.LinAlgError:
+            return np.eye(4, dtype=np.float32)
+        return np.asarray(delta, dtype=np.float32)
 
     def set_world_transform(
         self,
@@ -626,12 +690,14 @@ class StereoPresenter:
         view = srd.view_matrix(eye)
         eye_pos_cm = eye_pos_cm_from_view(view)
         world = np.asarray(self._world_matrix, dtype=np.float32).reshape(4, 4)
+        # Qt orbit rotation/pan (distance ignored) → model transform.
+        model = world @ self._preview_model_delta()
         if self.mirror_x:
             mirror = np.eye(4, dtype=np.float32)
             mirror[0, 0] = -1.0
-            view = view @ mirror @ world
+            view = view @ mirror @ model
         else:
-            view = view @ world
+            view = view @ model
         proj = srd.projection_matrix(eye, self.near_z, self.far_z)
         return view, proj, eye_pos_cm
 
@@ -734,6 +800,7 @@ class SRDAppAbstract(QtCore.QObject):
         units: str = "mm",
         display_magnification: float = 10.0,
         mirror_x: bool = True,
+        follow_preview_camera: bool = True,
         render_scale: float | None = 0.5,
         show_preview: bool = True,
         world_scale: float | None = None,
@@ -747,6 +814,7 @@ class SRDAppAbstract(QtCore.QObject):
         self.units = units
         self.display_magnification = float(display_magnification)
         self.mirror_x = mirror_x
+        self.follow_preview_camera = follow_preview_camera
         self.render_scale = render_scale
         self.show_preview = show_preview
 
@@ -763,6 +831,7 @@ class SRDAppAbstract(QtCore.QObject):
             scene_translation=scene_translation,
             center_scene=center_scene,
             mirror_x=mirror_x,
+            follow_preview_camera=follow_preview_camera,
             near_z=near_z,
             far_z=far_z,
             render_scale=render_scale,
