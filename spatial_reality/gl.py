@@ -671,12 +671,21 @@ class StereoPresenter:
         world = np.asarray(self._world_matrix, dtype=np.float32).reshape(4, 4)
 
         if self.follow_preview_camera and self.view is not None:
-            # Absolute Qt orbit (rotation + pan, no distance) so the SRD matches
-            # the preview at every pose — including the default az/el/center.
-            # Keep the real eye view for correct head-tracked depth/parallax.
-            # Skip mirror_x — the orbit matrix already matches preview handedness.
+            # Absolute Qt orbit (rotation + pan, no distance) for WYSIWYG.
+            # Do NOT multiply by the full eye view matrix — that already looks
+            # at the display and would double-apply pitch (~top-down on SRD
+            # while the preview stays front-on). Identify the orbit camera
+            # frame with the head camera frame; keep only left/right stereo
+            # relative to the head pose.
             orbit = preview_orbit_matrix(self.view)
-            view = view_eye @ world @ orbit
+            try:
+                view_head = np.asarray(
+                    srd.view_matrix(srd.EYE_HEAD), dtype=np.float32
+                )
+                stereo = view_eye @ np.linalg.inv(view_head)
+            except Exception:
+                stereo = np.eye(4, dtype=np.float32)
+            view = stereo @ world @ orbit
         else:
             if self.mirror_x:
                 mirror = np.eye(4, dtype=np.float32)
