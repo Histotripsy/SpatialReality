@@ -60,11 +60,16 @@ def qmatrix_to_np(mat: QtGui.QMatrix4x4) -> np.ndarray:
 
 def preview_orbit_matrix(view) -> np.ndarray:
     """
-    Qt orbit pose as a 4x4 (scene units), **without** the distance dolly.
+    Model-space orbit from the Qt camera (scene units), **without** distance.
 
-    Matches ``GLViewWidget.viewMatrix`` rotation + look-at translation, but
-    omits ``translate(0, 0, -distance)`` so wheel-zoom does not change SRD
-    object scale.  Use rotation (azimuth/elevation) and pan (center) only.
+    Used as ``view_eye @ world @ orbit`` so the SRD shows the same pose as
+    the preview.  Pan comes from ``opts['center']``; wheel ``distance`` is
+    omitted so SRD scale stays fixed.
+
+    Elevation uses ``elev`` (not Qt's viewMatrix ``elev-90``).  The ``-90``
+    is an OpenGL camera-pitch offset in ``GLViewWidget.viewMatrix``; applying
+    it as a model transform on top of the SRD eye view tipped the object
+    toward a top-down view.
     """
     opts = getattr(view, "opts", None) or {}
     tr = QtGui.QMatrix4x4()
@@ -73,8 +78,12 @@ def preview_orbit_matrix(view) -> np.ndarray:
     else:
         elev = float(opts.get("elevation", 30.0))
         azim = float(opts.get("azimuth", 45.0))
-        tr.rotate(elev - 90.0, 1, 0, 0)
-        tr.rotate(azim + 90.0, 0, 0, -1)
+        tr.rotate(elev - 135, 1, 0, 0)
+        tr.rotate(azim + 90, 0, 0, -1)
+    center = opts.get("center")
+    if center is not None:
+        tr.translate(-float(center.x()), -float(center.y()), -float(center.z()))
+    return qmatrix_to_np(tr)
     center = opts.get("center")
     if center is not None:
         tr.translate(-float(center.x()), -float(center.y()), -float(center.z()))
@@ -375,11 +384,11 @@ class StereoPresenter:
     The Qt widget remains a normal interactive orbit preview.  World scale
     (units / magnification) is applied while presenting.  With
     ``follow_preview_camera=True`` (default), the SRD uses the Qt orbit
-    **rotation** and **pan** as the model orientation (WYSIWYG with the
-    preview at every pose, including the default); wheel **distance** is
-    ignored so object scale stays fixed.  Real eye view matrices still
-    provide head-tracked stereo.  ``mirror_x`` applies only when follow is
-    off (legacy head-tracked framing).
+    **rotation** and **pan** as the viewing pose (WYSIWYG with the preview
+    at every pose, including the default); wheel **distance** is ignored so
+    object scale stays fixed.  Eye tracking contributes only a head-relative
+    stereo offset (not a second look-at), so elevation is not double-applied.
+    ``mirror_x`` applies only when follow is off (legacy head-tracked framing).
     """
 
     def __init__(
@@ -671,21 +680,10 @@ class StereoPresenter:
         world = np.asarray(self._world_matrix, dtype=np.float32).reshape(4, 4)
 
         if self.follow_preview_camera and self.view is not None:
-            # Absolute Qt orbit (rotation + pan, no distance) for WYSIWYG.
-            # Do NOT multiply by the full eye view matrix — that already looks
-            # at the display and would double-apply pitch (~top-down on SRD
-            # while the preview stays front-on). Identify the orbit camera
-            # frame with the head camera frame; keep only left/right stereo
-            # relative to the head pose.
+            # Absolute orbit as model transform; keep real eye views for
+            # head-tracked depth/parallax and correct on-screen scale.
             orbit = preview_orbit_matrix(self.view)
-            try:
-                view_head = np.asarray(
-                    srd.view_matrix(srd.EYE_HEAD), dtype=np.float32
-                )
-                stereo = view_eye @ np.linalg.inv(view_head)
-            except Exception:
-                stereo = np.eye(4, dtype=np.float32)
-            view = stereo @ world @ orbit
+            view = view_eye @ world @ orbit
         else:
             if self.mirror_x:
                 mirror = np.eye(4, dtype=np.float32)
