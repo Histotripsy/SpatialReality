@@ -315,13 +315,14 @@ glm::mat4 makeViewMatrix(const SonyOzPosef& pose)
 
 glm::mat4 makeProjectionMatrix(const SonyOzProjection& proj, float nearClip, float farClip)
 {
-    // Half-angles may arrive signed (OpenXR-style) or as magnitudes.
-    // Build a proper RH frustum: left/bottom ≤ 0, right/top ≥ 0.
-    const float l = nearClip * std::tan(std::abs(proj.half_angles_left));
-    const float r = nearClip * std::tan(std::abs(proj.half_angles_right));
-    const float t = nearClip * std::tan(std::abs(proj.half_angles_top));
-    const float b = nearClip * std::tan(std::abs(proj.half_angles_bottom));
-    return glm::frustumRH(-l, r, -b, t, nearClip, farClip);
+    // Match OpenXR CreateProjectionFov(GRAPHICS_OPENGL): use signed half-angles
+    // as frustum edges (angleLeft/bottom typically ≤ 0, right/top ≥ 0).
+    // NativeAPI GetProjection returns the same convention as XrFovf.
+    const float left = nearClip * std::tan(proj.half_angles_left);
+    const float right = nearClip * std::tan(proj.half_angles_right);
+    const float top = nearClip * std::tan(proj.half_angles_top);
+    const float bottom = nearClip * std::tan(proj.half_angles_bottom);
+    return glm::frustumRH(left, right, bottom, top, nearClip, farClip);
 }
 
 void presentCompositeToWindow()

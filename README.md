@@ -153,13 +153,15 @@ Prebuilding **only** our `SRDBridge.dll` (without Sony libs) is still legally mu
 
 ## Troubleshooting head tracking
 
-If looking from above/below makes the scene **slide with your head** instead of staying world-locked, rebuild the DLL after pulling (projection + buffer orientation fixes live in `src/SRDBridge.cpp` / `spatial_reality/gl.py`):
+Head-tracked content should stay **world-locked** in the display volume (parallax only; no screen-plane sliding). Rebuild the DLL after pulling:
 
 ```bat
 python scripts/build_dll.py --force
 ```
 
-If left/right still looks reversed relative to the Qt preview, pass ``mirror_x=True`` to ``StereoPresenter`` / ``SRDAppAbstract`` (or ``--mirror-x`` on the demos). The NativeAPI sample default is no extra X mirror.
+Presentation uses OpenGL-native framebuffer orientation with ``flip_y=True`` on submit (same idea as the OpenXR demo rendering straight into a GL swapchain — no CPU ``flipud``). Projection half-angles are applied as signed frustum edges, matching OpenXR ``CreateProjectionFov(GRAPHICS_OPENGL)``.
+
+``mirror_x`` defaults to **True** so SRD left/right matches the Qt preview. Pass ``mirror_x=False`` / ``--no-mirror-x`` only if L/R is already correct.
 
 ## License
 

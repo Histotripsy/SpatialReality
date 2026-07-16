@@ -159,13 +159,16 @@ def qimage_to_rgba(qimg: QtGui.QImage) -> np.ndarray:
 
 def read_rgba_from_gl(width: int, height: int) -> np.ndarray:
     """
-    Read the current GL framebuffer as RGBA uint8 in **OpenGL row order**
-    (first row = bottom of the image).
+    Read the current GL framebuffer as RGBA uint8 in OpenGL row order
+    (row 0 = bottom of the image).
 
-    Keep this orientation when uploading via ``glTexSubImage2D`` and submit
-    with ``flip_y=False`` so the SRD compositor sees an upright view.  An
-    extra CPU ``flipud`` here used to invert head-tracked vertical parallax
-    (looking from above made the scene slide the wrong way).
+    Do **not** CPU-``flipud`` here.  The OpenXR / NativeAPI present path
+    expects GL-native orientation; pass ``flip_y=True`` to
+    ``submit_stereo`` / ``SubmitOpengl`` so the compositor treats the
+    buffer as bottom-left origin.  CPU-flipping while submitting with
+    ``flip_y=False`` made the SBS image upright on a 2D blit but inverted
+    head-tracked vertical parallax; submitting upside-down with
+    ``flip_y=False`` made content mirrored/flipped and slide on-screen.
     """
     GL.glPixelStorei(GL.GL_PACK_ALIGNMENT, 1)
     raw = GL.glReadPixels(0, 0, width, height, GL.GL_RGBA, GL.GL_UNSIGNED_BYTE)
@@ -342,8 +345,9 @@ class StereoPresenter:
 
     The Qt widget remains a normal interactive orbit preview.  Scale,
     translation, and optional X-mirror are applied only while presenting.
-    ``mirror_x`` defaults to False (NativeAPI sample convention); enable it
-    only if left/right on the SRD looks reversed relative to the preview.
+    ``mirror_x`` defaults to True so SRD left/right matches the Qt preview
+    (NativeAPI tracking already reflects X/Z; this undoes the L/R swap on
+    the display).  Pass ``False`` only if your content already matches.
     """
 
     def __init__(
@@ -355,7 +359,7 @@ class StereoPresenter:
         world_scale: Optional[float] = None,
         scene_translation: Optional[Sequence[float]] = None,
         center_scene: bool = True,
-        mirror_x: bool = False,
+        mirror_x: bool = True,
         near_z: float = 1.0,
         far_z: float = 1000.0,
         render_scale: Optional[float] = 0.5,
@@ -692,7 +696,8 @@ class StereoPresenter:
         try:
             left = self._render_eye_rgba(srd.EYE_LEFT)
             right = self._render_eye_rgba(srd.EYE_RIGHT)
-            srd.submit_stereo(left, right)
+            # GL readback is bottom-left origin; tell SubmitOpengl via flip_y.
+            srd.submit_stereo(left, right, flip_y=True)
         except Exception as exc:
             print(f"StereoPresenter present skipped: {exc}")
             try:
@@ -728,7 +733,7 @@ class SRDAppAbstract(QtCore.QObject):
         *,
         units: str = "mm",
         display_magnification: float = 10.0,
-        mirror_x: bool = False,
+        mirror_x: bool = True,
         render_scale: float | None = 0.5,
         show_preview: bool = True,
         world_scale: float | None = None,
