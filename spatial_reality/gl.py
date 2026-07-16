@@ -373,11 +373,13 @@ class StereoPresenter:
     Render an ``SRDGLViewWidget`` scene for both SRD eyes and submit RGBA.
 
     The Qt widget remains a normal interactive orbit preview.  World scale
-    (units / magnification) and optional X-mirror are applied while
-    presenting.  With ``follow_preview_camera=True`` (default), orbit
-    **rotation** and **pan** from the Qt camera are applied on the SRD as
-    well; wheel **distance** is ignored so object scale stays fixed.
-    ``mirror_x`` defaults to True so SRD left/right matches the Qt preview.
+    (units / magnification) is applied while presenting.  With
+    ``follow_preview_camera=True`` (default), the SRD uses the Qt orbit
+    **rotation** and **pan** as the model orientation (WYSIWYG with the
+    preview at every pose, including the default); wheel **distance** is
+    ignored so object scale stays fixed.  Real eye view matrices still
+    provide head-tracked stereo.  ``mirror_x`` applies only when follow is
+    off (legacy head-tracked framing).
     """
 
     def __init__(
@@ -422,7 +424,6 @@ class StereoPresenter:
         self.render_h = 0
         self.scene_translation = (0.0, 0.0, 0.0)
         self._world_matrix = np.eye(4, dtype=np.float32)
-        self._preview_ref: Optional[np.ndarray] = None
         self._srd_ready = False
         self._gl_ready = False
         self._scatter_size_backup = []
@@ -471,39 +472,17 @@ class StereoPresenter:
         self._gl_ready = False
         self._srd_fbo = None
         self._srd_fbo_size = (0, 0)
-        self._preview_ref = None
         if srd.is_initialized():
             srd.shutdown()
 
     def capture_preview_pose(self) -> None:
         """
-        Treat the current Qt orbit pose as the SRD home pose.
+        No-op kept for API compatibility.
 
-        Relative rotation/pan from this reference are applied on the SRD
-        when ``follow_preview_camera`` is enabled.  Call after resetting the
-        preview camera (e.g. key ``R``) so home matches again.
+        Follow mode applies the absolute Qt orbit pose each frame (WYSIWYG),
+        so there is no separate home reference to capture.
         """
-        if self.view is None:
-            self._preview_ref = None
-            return
-        self._preview_ref = preview_orbit_matrix(self.view)
-
-    def _preview_model_delta(self) -> np.ndarray:
-        """Model-space delta from the captured Qt orbit reference (no zoom)."""
-        if not self.follow_preview_camera or self.view is None:
-            return np.eye(4, dtype=np.float32)
-        cur = preview_orbit_matrix(self.view)
-        if self._preview_ref is None:
-            self._preview_ref = cur.copy()
-            return np.eye(4, dtype=np.float32)
-        # Viewing with V_cur is like V_ref after model transform
-        # delta = inv(V_ref) @ V_cur.  Apply that delta on the SRD so orbit
-        # rotation/pan matches the Qt preview (distance still ignored).
-        try:
-            delta = np.linalg.inv(self._preview_ref) @ cur
-        except np.linalg.LinAlgError:
-            return np.eye(4, dtype=np.float32)
-        return np.asarray(delta, dtype=np.float32)
+        return
 
     def set_world_transform(
         self,
@@ -687,17 +666,25 @@ class StereoPresenter:
     def _eye_matrices(
         self, eye: int
     ) -> Tuple[np.ndarray, np.ndarray, Tuple[float, float, float]]:
-        view = srd.view_matrix(eye)
-        eye_pos_cm = eye_pos_cm_from_view(view)
+        view_eye = np.asarray(srd.view_matrix(eye), dtype=np.float32)
+        eye_pos_cm = eye_pos_cm_from_view(view_eye)
         world = np.asarray(self._world_matrix, dtype=np.float32).reshape(4, 4)
-        # Qt orbit rotation/pan (distance ignored) → model transform.
-        model = world @ self._preview_model_delta()
-        if self.mirror_x:
-            mirror = np.eye(4, dtype=np.float32)
-            mirror[0, 0] = -1.0
-            view = view @ mirror @ model
+
+        if self.follow_preview_camera and self.view is not None:
+            # Absolute Qt orbit (rotation + pan, no distance) so the SRD matches
+            # the preview at every pose — including the default az/el/center.
+            # Keep the real eye view for correct head-tracked depth/parallax.
+            # Skip mirror_x — the orbit matrix already matches preview handedness.
+            orbit = preview_orbit_matrix(self.view)
+            view = view_eye @ world @ orbit
         else:
-            view = view @ model
+            if self.mirror_x:
+                mirror = np.eye(4, dtype=np.float32)
+                mirror[0, 0] = -1.0
+                view = view_eye @ mirror @ world
+            else:
+                view = view_eye @ world
+
         proj = srd.projection_matrix(eye, self.near_z, self.far_z)
         return view, proj, eye_pos_cm
 

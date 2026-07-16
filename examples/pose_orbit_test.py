@@ -18,8 +18,7 @@ Run::
 
 Keys
 ----
-``R``     reset camera to the home orbit pose (and re-capture SRD home)
-``P``     capture current orbit pose as the new SRD home (no camera jump)
+``R``     reset camera to the default orbit pose
 ``F``     toggle follow_preview_camera
 ``1/2/3`` magnification 1 / 10 / 15
 ``Esc``   quit
@@ -168,11 +167,9 @@ class PoseOrbitTest(SRDAppAbstract):
             azimuth=self._home_cam["azimuth"],
         )
         self.win.opts["fov"] = 35
-        # Home pose on the SRD = this initial orbit (relative deltas from here).
-        self.presenter.capture_preview_pose()
 
         self.win.setWindowTitle(
-            "SRD pose orbit test — drag to move SRD pose (wheel = preview zoom only)"
+            "SRD pose orbit test — SRD should match Qt orbit (wheel = preview zoom only)"
         )
         self.win.resize(960, 640)
         if self.show_preview:
@@ -188,10 +185,11 @@ class PoseOrbitTest(SRDAppAbstract):
 
         print(
             "Pose orbit test\n"
-            "  LMB drag = orbit (SRD follows rotation)\n"
-            "  MMB/Ctrl+LMB drag = pan (SRD follows translation)\n"
+            "  Expect: SRD matches Qt — blue up, red left, green right, yellow front\n"
+            "  LMB drag = orbit (SRD follows)\n"
+            "  MMB/Ctrl+LMB drag = pan (SRD follows)\n"
             "  Wheel = preview distance only (SRD scale fixed)\n"
-            "  R=reset home  P=capture home  F=toggle follow  Esc=quit\n"
+            "  R=reset camera  F=toggle follow  Esc=quit\n"
         )
         self._print_status()
 
@@ -217,8 +215,7 @@ class PoseOrbitTest(SRDAppAbstract):
             elevation=self._home_cam["elevation"],
             azimuth=self._home_cam["azimuth"],
         )
-        self.presenter.capture_preview_pose()
-        print("  reset camera + captured SRD home pose")
+        print("  reset camera to default orbit pose")
 
     def keyPressEvent(self, ev):
         key = ev.key()
@@ -226,15 +223,10 @@ class PoseOrbitTest(SRDAppAbstract):
             QtWidgets.QApplication.instance().quit()
         elif key == QtCore.Qt.Key_R:
             self._reset_home()
-        elif key == QtCore.Qt.Key_P:
-            self.presenter.capture_preview_pose()
-            print("  captured current orbit as SRD home pose")
         elif key == QtCore.Qt.Key_F:
             self.presenter.follow_preview_camera = (
                 not self.presenter.follow_preview_camera
             )
-            if self.presenter.follow_preview_camera:
-                self.presenter.capture_preview_pose()
             print(
                 f"  follow_preview_camera="
                 f"{'ON' if self.presenter.follow_preview_camera else 'OFF'}"
