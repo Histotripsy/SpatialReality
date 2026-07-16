@@ -671,6 +671,21 @@ class StereoPresenter:
 
         QtCore.QTimer.singleShot(max(0, int(delay_ms)), _try)
 
+    def present_or_schedule(self, delay_ms: int = 0) -> bool:
+        """
+        Present immediately when the GL context is ready; otherwise schedule.
+
+        Returns True only when a frame was submitted in this call.  Host loops
+        that build the scene before the first paint (common in data-proc
+        plotters) should prefer this over bare :meth:`present`.
+        """
+        if not self._srd_ready or self.view is None:
+            return False
+        if self.ensure_gl_ready():
+            return self.present()
+        self.schedule_present(delay_ms)
+        return False
+
     def _iter_graphics_items(self):
         def walk(item):
             yield item

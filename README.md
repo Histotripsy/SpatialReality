@@ -142,7 +142,10 @@ presenter.shutdown()
 `create_stereo_view` configures the surface format, starts the SRD session,
 and returns a ready `(SRDGLViewWidget, StereoPresenter)` pair.
 `StereoPresenter.shutdown()` is idempotent and only closes the native session
-when the presenter owns it.
+when the presenter owns it.  Host loops that present before the first Qt paint
+should use `presenter.present_or_schedule()`.
+
+Scene helpers: `make_sphere_wireframe`, `make_box_wireframe`.
 
 `StereoPresenter` / `SRDAppAbstract` follow the Qt orbit camera by default
 (`follow_preview_camera=True`): rotation and pan match the preview; wheel zoom
