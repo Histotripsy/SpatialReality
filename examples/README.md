@@ -17,10 +17,10 @@ python examples/ruler_test.py --magnification 10
 python examples/sphere_cloud.py --radius 10 --n 64
 ```
 
-| File | Dependency | Notes |
-|---|---|---|
-| `stereo_buffers.py` | `spatial_reality.bridge` | Flashing L/R color fields |
-| `gl_view_demo.py` | `spatial_reality.gl` | Preferred lightweight pyqtgraph path |
-| `pose_orbit_test.py` | `spatial_reality.gl` | RGB axes + cube; Qt orbit drives SRD pose |
-| `ruler_test.py` | `spatial_reality.gl` | Scale / magnification check |
-| `sphere_cloud.py` | `spatial_reality.gl` | Moving scatter + wireframes |
+| File | Notes |
+|---|---|
+| `stereo_buffers.py` | Raw left/right RGBA via `present_stereo_frame` |
+| `gl_view_demo.py` | Minimal `create_stereo_view` scatter scene |
+| `pose_orbit_test.py` | RGB axes + cube; Qt orbit drives SRD pose |
+| `ruler_test.py` | Scale / magnification check |
+| `sphere_cloud.py` | Animated scatter cloud + wireframes |

@@ -8,8 +8,8 @@ on the SRD stays fixed (units / magnification).
 Scene
 -----
 RGB axes (X=red, Y=green, Z=blue), a 10 mm reference cube, corner markers,
-and a ground grid.  Easy to see mirroring, flip, and world-lock while you
-move your head and the orbit camera.
+and a ground grid.  Use this to verify that the SRD matches the Qt orbit
+pose and stays world-locked as you move your head.
 
 Run::
 
@@ -36,11 +36,9 @@ from PyQt5 import QtCore, QtWidgets
 
 from pathlib import Path
 import sys
-
 _ROOT = Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
-
 from spatial_reality.gl import SRDAppAbstract
 
 
@@ -146,7 +144,6 @@ class PoseOrbitTest(SRDAppAbstract):
     def __init__(self, *args, **kwargs):
         kwargs.setdefault("units", "mm")
         kwargs.setdefault("display_magnification", 10.0)
-        kwargs.setdefault("mirror_x", True)
         kwargs.setdefault("follow_preview_camera", True)
         kwargs.setdefault("render_scale", 0.5)
         kwargs.setdefault("show_preview", True)
@@ -256,11 +253,6 @@ def main(argv=None):
         action="store_true",
         help="Do not apply Qt orbit pose on the SRD",
     )
-    p.add_argument(
-        "--no-mirror-x",
-        action="store_true",
-        help="Disable X mirror on SRD cameras",
-    )
     args = p.parse_args(argv)
 
     rs = str(args.render_scale).strip().lower()
@@ -278,7 +270,6 @@ def main(argv=None):
         render_scale=render_scale,
         show_preview=not args.no_preview,
         follow_preview_camera=not args.no_follow_camera,
-        mirror_x=not args.no_mirror_x,
     )
     demo.onStart()
     code = app.exec_()

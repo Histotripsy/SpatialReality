@@ -1,12 +1,9 @@
 """
-Cavitation-style demo for the SRD: outer wireframe sphere filled with
-moving colored ``GLScatterPlotItem`` bubbles, plus a small wireframe marker
-that tracks the "current" bubble.
+Animated sphere-cloud demo for the SRD: outer wireframe sphere filled with
+moving colored scatter points, plus a small wireframe marker that tracks one
+point.
 
-Uses ``SRDAppAbstract`` to keep the boilerplate (window setup, key-event
-forwarding, present loop) out of the demo class itself.
-
-(``_makeSphereWireframe``, scatter ``pxMode=False``, ``present_to_srd``).
+Uses ``SRDAppAbstract`` for window setup, key forwarding, and the present loop.
 
 Run::
 
@@ -85,11 +82,7 @@ def random_points_in_sphere(n: int, radius: float, rng: np.random.Generator) -> 
 
 
 class SphereCloudDemo(SRDAppAbstract):
-    """
-    Outer wireframe bounds a cloud of colored scatter bubbles that drift
-    inside it.  A small wireframe marker follows one bubble (like
-    ``cur_sphere`` in the cavitation plotter).
-    """
+    """Outer wireframe with a drifting scatter cloud and a tracked marker."""
 
     def __init__(
         self,
@@ -101,7 +94,6 @@ class SphereCloudDemo(SRDAppAbstract):
     ):
         kwargs.setdefault("units", "mm")
         kwargs.setdefault("display_magnification", 10.0)
-        kwargs.setdefault("mirror_x", True)
         kwargs.setdefault("render_scale", 0.5)
         kwargs.setdefault("show_preview", True)
         super().__init__(*args, **kwargs)
@@ -255,18 +247,6 @@ def main(argv=None):
         help="Fullscreen Qt preview on a desktop monitor (not the SRD)",
     )
     p.add_argument("--no-preview", action="store_true")
-    p.add_argument(
-        "--mirror-x",
-        action="store_true",
-        default=True,
-        help="Mirror world X on SRD cameras (default; matches Qt L/R)",
-    )
-    p.add_argument(
-        "--no-mirror-x",
-        action="store_false",
-        dest="mirror_x",
-        help="Disable X mirror if SRD L/R already matches the preview",
-    )
     args = p.parse_args(argv)
 
     rs = str(args.render_scale).strip().lower()
@@ -277,11 +257,7 @@ def main(argv=None):
 
     app = QtWidgets.QApplication([])
 
-    # Let Ctrl-C quit the app instead of being swallowed by Qt's event loop.
     signal.signal(signal.SIGINT, lambda *args: app.quit())
-    # Qt's C++ event loop never hands control back to the Python interpreter
-    # (which is where signal handlers actually run) unless something wakes
-    # it up periodically -- this no-op timer does that.
     _sigint_timer = QtCore.QTimer()
     _sigint_timer.timeout.connect(lambda: None)
     _sigint_timer.start(200)
@@ -294,7 +270,6 @@ def main(argv=None):
         display_magnification=args.magnification,
         render_scale=render_scale,
         show_preview=not args.no_preview,
-        mirror_x=args.mirror_x,
     )
     demo.onStart()
     if demo.show_preview:
