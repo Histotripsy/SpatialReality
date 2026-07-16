@@ -8,8 +8,8 @@ Layers
     poses / view / projection matrices.  No Qt dependency.
 
 ``spatial_reality.gl``
-    Lightweight ``SRDGLViewWidget`` + ``StereoPresenter`` + ``SRDAppAbstract`` for PyQt /
-    pyqtgraph.opengl scenes.
+    ``create_stereo_view`` / ``SRDGLViewWidget`` + ``StereoPresenter`` +
+    ``SRDAppAbstract`` for PyQt / pyqtgraph.opengl scenes.
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ from spatial_reality.bridge import (
     load,
     make_current,
     poll_events,
+    present_stereo_frame,
     projection_fov_deg,
     projection_half_angles,
     projection_matrix,
@@ -58,6 +59,7 @@ __all__ = [
     "load",
     "make_current",
     "poll_events",
+    "present_stereo_frame",
     "projection_fov_deg",
     "projection_half_angles",
     "projection_matrix",
@@ -78,6 +80,7 @@ try:
         StereoPresenter,
         SRDAppAbstract,
         configure_surface_format,
+        create_stereo_view,
         resolve_world_scale,
     )
 
@@ -86,6 +89,7 @@ try:
         "StereoPresenter",
         "SRDAppAbstract",
         "configure_surface_format",
+        "create_stereo_view",
         "resolve_world_scale",
     ]
 except ImportError:

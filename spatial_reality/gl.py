@@ -1,25 +1,18 @@
 """
 Lightweight pyqtgraph / PyQt helpers for the Sony Spatial Reality Display.
 
-Use ``SRDGLViewWidget`` like a normal ``GLViewWidget``, then push stereo frames
-with ``StereoPresenter``::
+Use ``create_stereo_view`` (or ``SRDGLViewWidget`` + ``StereoPresenter``)::
 
     from PyQt5 import QtWidgets
     import pyqtgraph.opengl as gl
-    from spatial_reality import bridge as srd
-    from spatial_reality.gl import SRDGLViewWidget, StereoPresenter, configure_surface_format
+    from spatial_reality.gl import create_stereo_view
 
-    configure_surface_format()
     app = QtWidgets.QApplication([])
-    if not srd.init():
-        raise RuntimeError(srd.last_error())
-
-    win = SRDGLViewWidget()
+    win, presenter = create_stereo_view(units="mm", display_magnification=10)
     win.addItem(gl.GLScatterPlotItem(pos=..., size=1.0, pxMode=False))
     win.show()
-
-    presenter = StereoPresenter(win, units="mm", display_magnification=10)
-    # call presenter.present() whenever the scene should refresh on the SRD
+    presenter.present()  # after each scene update
+    # on exit: presenter.shutdown()
 """
 
 from __future__ import annotations
@@ -179,6 +172,42 @@ def configure_surface_format() -> None:
     except AttributeError:
         pass
     QtGui.QSurfaceFormat.setDefaultFormat(fmt)
+
+
+def srd_monitor_rect() -> Optional[Tuple[int, int, int, int]]:
+    """SRD monitor rectangle ``(left, top, right, bottom)`` in virtual desktop px."""
+    try:
+        return tuple(srd.display_info()["monitor"])
+    except Exception:
+        return None
+
+
+def pick_desktop_screen(
+    app: Optional[QtWidgets.QApplication] = None,
+) -> Optional["QtGui.QScreen"]:
+    """
+    Prefer a screen that is *not* the SRD panel (for desktop preview).
+
+    Falls back to the primary screen when the SRD rect is unknown.
+    """
+    app = app or QtWidgets.QApplication.instance()
+    if app is None:
+        return None
+    screens = list(app.screens())
+    if not screens:
+        return None
+
+    srd_rect = srd_monitor_rect()
+    if srd_rect is not None:
+        ml, mt, mr, mb = srd_rect
+        srd_center = QtCore.QPoint((ml + mr) // 2, (mt + mb) // 2)
+        desktop = [scr for scr in screens if not scr.geometry().contains(srd_center)]
+        if desktop:
+            primary = app.primaryScreen()
+            if primary in desktop:
+                return primary
+            return desktop[0]
+    return app.primaryScreen()
 
 
 def read_rgba_from_gl(width: int, height: int) -> np.ndarray:
@@ -364,6 +393,10 @@ class StereoPresenter:
     ``follow_preview_camera=True`` (default) — the preview orbit rotation and
     pan are applied on the SRD as well.  Wheel zoom affects only the desktop
     preview distance; SRD object scale stays fixed.
+
+    Prefer :func:`create_stereo_view` to build the widget + presenter together.
+    Call :meth:`shutdown` once on exit (idempotent; releases the offscreen FBO
+    before tearing down the native session when this presenter owns it).
     """
 
     def __init__(
@@ -382,6 +415,7 @@ class StereoPresenter:
         show_preview: bool = True,
         dll_path: Optional[Union[str, Path]] = None,
         init_session: bool = False,
+        owns_session: Optional[bool] = None,
     ):
         self.view = view
         self.dll_path = dll_path
@@ -399,6 +433,8 @@ class StereoPresenter:
         self.far_z = float(far_z)
         self.render_scale = render_scale
         self.show_preview = bool(show_preview)
+        self._preview_fullscreen = render_scale is None
+        self._preview_fullscreen_applied = False
 
         self.eye_w = 0
         self.eye_h = 0
@@ -408,30 +444,55 @@ class StereoPresenter:
         self._world_matrix = np.eye(4, dtype=np.float32)
         self._srd_ready = False
         self._gl_ready = False
+        self._owns_session = False
         self._scatter_size_backup = []
         self._saved_fov = None
         self._srd_fbo = None
         self._srd_fbo_size = (0, 0)
+        self._initial_present_scheduled = False
 
         if init_session:
             self.start_session()
         elif srd.is_initialized():
-            self._bind_to_session()
+            self.bind_session(owns_session=bool(owns_session) if owns_session is not None else False)
+
+    @property
+    def ready(self) -> bool:
+        """True while the SRD session is bound and the window has not closed."""
+        return bool(self._srd_ready)
+
+    @property
+    def owns_session(self) -> bool:
+        """If True, :meth:`shutdown` will call ``srd.shutdown()``."""
+        return bool(self._owns_session)
+
+    @property
+    def preview_fullscreen(self) -> bool:
+        """True when ``render_scale is None`` (full-eye FBO + desktop fullscreen)."""
+        return bool(self._preview_fullscreen)
 
     def start_session(self) -> None:
-        """Load the DLL and start the SRD session if needed."""
-        srd.load(self.dll_path)
-        srd.silence_client_stdio()
-        if not srd.is_initialized():
+        """Load the DLL and start the SRD session if needed, then bind."""
+        already = srd.is_initialized()
+        if not already:
+            # init() loads the DLL, mutes native prints, and sets log level.
             if not srd.init(self.dll_path, mute_native_prints=True):
                 raise RuntimeError(f"SRD unavailable: {srd.last_error()}")
-        try:
-            srd.set_log_level("off")
-        except Exception:
-            pass
-        self._bind_to_session()
+            self._owns_session = True
+        self.bind_session(owns_session=self._owns_session or not already)
 
-    def _bind_to_session(self) -> None:
+    def bind_session(self, *, owns_session: Optional[bool] = None) -> None:
+        """
+        Bind eye resolution / world transform to an already-initialized session.
+
+        Use this when something else called ``srd.init()``.  Pass
+        ``owns_session=True`` only if this presenter should tear the session
+        down in :meth:`shutdown`.
+        """
+        if not srd.is_initialized():
+            raise RuntimeError("SRD session is not initialized; call start_session()")
+        if owns_session is not None:
+            self._owns_session = bool(owns_session)
         self.eye_w, self.eye_h = srd.eye_resolution()
         if self.render_scale is None:
             scale = 1.0
@@ -449,13 +510,47 @@ class StereoPresenter:
         self._srd_ready = True
         self._gl_ready = False
 
-    def shutdown(self) -> None:
+    # Back-compat alias for earlier private name.
+    def _bind_to_session(self) -> None:
+        self.bind_session()
+
+    def _release_gl_resources(self) -> None:
+        """Destroy the offscreen FBO while the Qt GL context is current."""
+        if self._srd_fbo is None and self._srd_fbo_size == (0, 0):
+            return
+        try:
+            if self.view is not None:
+                try:
+                    if self.view.isValid():
+                        self.view.makeCurrent()
+                except Exception:
+                    pass
+            self._srd_fbo = None
+            self._srd_fbo_size = (0, 0)
+            if self.view is not None:
+                try:
+                    self.view.doneCurrent()
+                except Exception:
+                    pass
+        except Exception:
+            self._srd_fbo = None
+            self._srd_fbo_size = (0, 0)
+
+    def shutdown(self, *, close_session: Optional[bool] = None) -> None:
+        """
+        Release GL resources and optionally shut down the native SRD session.
+
+        Idempotent.  By default closes the session only when this presenter
+        owns it (``start_session`` / ``init_session=True``).  Pass
+        ``close_session=True/False`` to override.
+        """
         self._srd_ready = False
         self._gl_ready = False
-        self._srd_fbo = None
-        self._srd_fbo_size = (0, 0)
-        if srd.is_initialized():
+        self._release_gl_resources()
+        should_close = self._owns_session if close_session is None else bool(close_session)
+        if should_close and srd.is_initialized():
             srd.shutdown()
+        self._owns_session = False
 
     def set_world_transform(
         self,
@@ -490,7 +585,8 @@ class StereoPresenter:
             abs(float(self.world_scale)), self.scene_translation
         )
 
-    def _ensure_gl_ready(self) -> bool:
+    def ensure_gl_ready(self) -> bool:
+        """Make the Qt GL context current; return False until the widget is valid."""
         if self.view is None:
             return False
         if self._gl_ready and self.view.isValid():
@@ -503,7 +599,10 @@ class StereoPresenter:
         app = QtWidgets.QApplication.instance()
         if app is not None:
             app.processEvents()
-        self.view.makeCurrent()
+        try:
+            self.view.makeCurrent()
+        except Exception:
+            return False
         if not self.view.isValid():
             return False
         try:
@@ -514,6 +613,63 @@ class StereoPresenter:
             return False
         self._gl_ready = True
         return True
+
+    # Back-compat alias.
+    def _ensure_gl_ready(self) -> bool:
+        return self.ensure_gl_ready()
+
+    def apply_desktop_preview(self, *, fullscreen: Optional[bool] = None) -> bool:
+        """
+        Place the preview on a non-SRD desktop screen.
+
+        When ``fullscreen`` is True (default if ``render_scale is None``),
+        show the widget full-screen on that screen.  Returns True if applied.
+        """
+        if not self.show_preview or self.view is None:
+            return False
+        want_fs = self._preview_fullscreen if fullscreen is None else bool(fullscreen)
+        if want_fs and self._preview_fullscreen_applied:
+            return True
+        screen = pick_desktop_screen()
+        if screen is not None:
+            geo = screen.geometry()
+            try:
+                handle = self.view.windowHandle()
+                if handle is not None:
+                    handle.setScreen(screen)
+            except Exception:
+                pass
+            self.view.setGeometry(geo)
+        if want_fs:
+            self.view.showFullScreen()
+            self._preview_fullscreen_applied = True
+        elif not self.view.isVisible():
+            self.view.show()
+        return True
+
+    def schedule_present(self, delay_ms: int = 0) -> None:
+        """
+        Retry :meth:`present` until the Qt GL context is ready.
+
+        Useful right after ``show()`` / fullscreen, when the first present
+        would otherwise fail because the widget is not yet valid.
+        """
+        if self._initial_present_scheduled and delay_ms == 0:
+            return
+        self._initial_present_scheduled = True
+
+        def _try() -> None:
+            try:
+                if not self._srd_ready:
+                    return
+                if not self.ensure_gl_ready():
+                    QtCore.QTimer.singleShot(50, _try)
+                    return
+                self.present()
+            except Exception as exc:
+                print(f"StereoPresenter schedule_present failed: {exc}")
+
+        QtCore.QTimer.singleShot(max(0, int(delay_ms)), _try)
 
     def _iter_graphics_items(self):
         def walk(item):
@@ -694,7 +850,7 @@ class StereoPresenter:
         if not srd.poll_events():
             self._srd_ready = False
             return False
-        if not self._ensure_gl_ready():
+        if not self.ensure_gl_ready():
             return False
 
         try:
@@ -711,6 +867,7 @@ class StereoPresenter:
             try:
                 self.view._srd_pixel_size = None
                 self.view.clear_srd_cameras()
+                self._end_srd_scatter_fix()
             except Exception:
                 pass
             return False
@@ -718,6 +875,101 @@ class StereoPresenter:
         if self.show_preview:
             self.view.update()
         return True
+
+
+def create_stereo_view(
+    *,
+    title: str = "SRD GL Preview",
+    units: str = "mm",
+    display_magnification: float = 15.0,
+    world_scale: Optional[float] = None,
+    scene_translation: Optional[Sequence[float]] = None,
+    center_scene: bool = True,
+    follow_preview_camera: bool = True,
+    near_z: float = 1.0,
+    far_z: float = 1000.0,
+    render_scale: Optional[float] = 0.5,
+    show_preview: bool = True,
+    dll_path: Optional[Union[str, Path]] = None,
+    init_session: bool = True,
+    camera_distance: float = 60.0,
+    camera_elevation: float = 20.0,
+    camera_azimuth: float = 45.0,
+    background: str = "k",
+) -> Tuple[SRDGLViewWidget, StereoPresenter]:
+    """
+    Build a configured ``SRDGLViewWidget`` + ``StereoPresenter``.
+
+    ``render_scale=None`` means full eye resolution for stereo FBOs and a
+    full-screen desktop preview (call ``presenter.apply_desktop_preview()``
+    after the Qt event loop can place windows, e.g. from a zero-delay timer).
+
+    When ``init_session=True`` (default), starts the SRD session before sizing
+    the widget.  Pass ``False`` to defer to ``presenter.start_session()``
+    (used by ``SRDAppAbstract.onStart``).
+
+    Returns ``(win, presenter)``.  Call ``presenter.shutdown()`` on exit.
+    """
+    configure_surface_format()
+    preview_fullscreen = render_scale is None
+
+    owns = False
+    if init_session:
+        already = srd.is_initialized()
+        if not already:
+            if not srd.init(dll_path, mute_native_prints=True):
+                raise RuntimeError(f"SRD unavailable: {srd.last_error()}")
+            owns = True
+
+    render_w, render_h = 960, 540
+    if srd.is_initialized():
+        eye_w, eye_h = srd.eye_resolution()
+        if render_scale is None:
+            scale = 1.0
+        else:
+            scale = max(0.05, min(float(render_scale), 1.0))
+        render_w = max(64, int(eye_w * scale))
+        render_h = max(64, int(eye_h * scale))
+
+    win = SRDGLViewWidget()
+    win.setWindowTitle(title)
+    if preview_fullscreen and show_preview:
+        win.setMinimumSize(64, 64)
+    else:
+        win.resize(render_w, render_h)
+        win.setMinimumSize(render_w, render_h)
+    if not show_preview:
+        win.setAttribute(QtCore.Qt.WA_DontShowOnScreen, True)
+    win.setCameraPosition(
+        distance=camera_distance,
+        elevation=camera_elevation,
+        azimuth=camera_azimuth,
+    )
+    win.opts["center"] = pg.Vector(0, 0, 0)
+    win.opts["fov"] = 30
+    win.setBackgroundColor(background)
+
+    presenter = StereoPresenter(
+        win,
+        units=units,
+        display_magnification=display_magnification,
+        world_scale=world_scale,
+        scene_translation=scene_translation,
+        center_scene=center_scene,
+        follow_preview_camera=follow_preview_camera,
+        near_z=near_z,
+        far_z=far_z,
+        render_scale=render_scale,
+        show_preview=show_preview,
+        dll_path=dll_path,
+        init_session=False,
+        owns_session=owns if srd.is_initialized() else None,
+    )
+    if srd.is_initialized() and not presenter.ready:
+        presenter.bind_session(owns_session=owns)
+    elif owns:
+        presenter._owns_session = True
+    return win, presenter
 
 
 # ---------------------------------------------------------------------------
@@ -750,18 +1002,13 @@ class SRDAppAbstract(QtCore.QObject):
         dll_path=None,
     ):
         super().__init__()
-        configure_surface_format()
         self.units = units
         self.display_magnification = float(display_magnification)
         self.follow_preview_camera = follow_preview_camera
         self.render_scale = render_scale
         self.show_preview = show_preview
 
-        self.win = SRDGLViewWidget()
-        self.win.keyPressEvent = self.keyPressEvent
-
-        self.presenter = StereoPresenter(
-            self.win,
+        self.win, self.presenter = create_stereo_view(
             units=units,
             display_magnification=display_magnification,
             world_scale=world_scale,
@@ -775,6 +1022,7 @@ class SRDAppAbstract(QtCore.QObject):
             dll_path=dll_path,
             init_session=False,
         )
+        self.win.keyPressEvent = self.keyPressEvent
 
     def onStart(self) -> None:
         """Start (or bind to) the SRD session, then build the scene."""
@@ -782,10 +1030,15 @@ class SRDAppAbstract(QtCore.QObject):
         self.world_scale = self.presenter.world_scale
         self.scene_translation = self.presenter.scene_translation
         self.center_scene = self.presenter.center_scene
+        if self.presenter.preview_fullscreen and self.show_preview:
+            QtCore.QTimer.singleShot(0, self.presenter.apply_desktop_preview)
+            QtCore.QTimer.singleShot(100, self.presenter.apply_desktop_preview)
         self._setupWindow()
+        self.presenter.schedule_present(0)
 
     def onExit(self) -> None:
-        self.presenter.shutdown()
+        if self.presenter is not None:
+            self.presenter.shutdown()
 
     def present_to_srd(self) -> bool:
         return self.presenter.present()

@@ -19,8 +19,8 @@ python examples/sphere_cloud.py --radius 10 --n 64
 
 | File | Notes |
 |---|---|
-| `stereo_buffers.py` | Raw left/right RGBA submit (no Qt) |
-| `gl_view_demo.py` | Minimal `StereoPresenter` scatter scene |
+| `stereo_buffers.py` | Raw left/right RGBA via `present_stereo_frame` |
+| `gl_view_demo.py` | Minimal `create_stereo_view` scatter scene |
 | `pose_orbit_test.py` | RGB axes + cube; Qt orbit drives SRD pose |
 | `ruler_test.py` | Scale / magnification check |
 | `sphere_cloud.py` | Animated scatter cloud + wireframes |

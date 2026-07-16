@@ -10,7 +10,7 @@ This repository does **not** include Sony's Native API. Download it separately a
 |---|---|
 | `spatial_reality/` | Python package (`pip install sony-spatial-reality-python`) |
 | `spatial_reality/bridge.py` | ctypes API — RGBA submit, poses, matrices (no Qt) |
-| `spatial_reality/gl.py` | `SRDGLViewWidget` + `StereoPresenter` + `SRDAppAbstract` for PyQt / pyqtgraph |
+| `spatial_reality/gl.py` | `create_stereo_view` + `StereoPresenter` + `SRDAppAbstract` for PyQt / pyqtgraph |
 | `src/` | `SRDBridge` native library sources |
 | `CMakeLists.txt` | Single CMake project (builds `SRDBridge.dll`) |
 | `XR_API/` | **You provide this** — Sony Native API (see below) |
@@ -83,7 +83,7 @@ This installs **`sony-spatial-reality-python`**; import it as ``spatial_reality`
 
 ```python
 from spatial_reality import bridge
-from spatial_reality.gl import SRDGLViewWidget, StereoPresenter, SRDAppAbstract
+from spatial_reality.gl import create_stereo_view, SRDAppAbstract
 ```
 
 Examples assume the package is installed:
@@ -107,36 +107,42 @@ if not srd.init():
 
 w, h = srd.eye_resolution()
 try:
-    while srd.poll_events():
-        srd.update_tracking()
+    while True:
         left = np.zeros((h, w, 4), np.uint8)
         right = np.zeros((h, w, 4), np.uint8)
         left[..., 1] = 180
         left[..., 3] = 255
         right[..., 2] = 180
         right[..., 3] = 255
-        srd.submit_stereo(left, right)
+        if not srd.present_stereo_frame(left, right):
+            break
 finally:
     srd.shutdown()
 ```
+
+`present_stereo_frame` is poll → track → submit in one call; returns `False`
+when the SRD window closes.
 
 ### PyQt / pyqtgraph (recommended for 3D scenes)
 
 ```python
 from PyQt5 import QtWidgets
 import pyqtgraph.opengl as gl
-from spatial_reality.gl import SRDGLViewWidget, StereoPresenter, configure_surface_format
+from spatial_reality.gl import create_stereo_view
 
-configure_surface_format()
 app = QtWidgets.QApplication([])
-
-win = SRDGLViewWidget()
+win, presenter = create_stereo_view(units="mm", display_magnification=10)
 win.addItem(gl.GLScatterPlotItem(pos=..., size=1.0, pxMode=False))
 win.show()
-
-presenter = StereoPresenter(win, units="mm", display_magnification=10, init_session=True)
 presenter.present()  # after each scene update
+# on exit:
+presenter.shutdown()
 ```
+
+`create_stereo_view` configures the surface format, starts the SRD session,
+and returns a ready `(SRDGLViewWidget, StereoPresenter)` pair.
+`StereoPresenter.shutdown()` is idempotent and only closes the native session
+when the presenter owns it.
 
 `StereoPresenter` / `SRDAppAbstract` follow the Qt orbit camera by default
 (`follow_preview_camera=True`): rotation and pan match the preview; wheel zoom

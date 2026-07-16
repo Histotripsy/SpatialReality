@@ -479,6 +479,7 @@ def init(
 
 
 def shutdown() -> None:
+    """Tear down the SRD session. Safe to call when not loaded / not initialized."""
     if _dll is None:
         return
     _dll.SRD_Shutdown()
@@ -490,6 +491,8 @@ def is_initialized() -> bool:
 
 def poll_events() -> bool:
     """Pump window events. Returns False when the SRD window should close."""
+    if not is_initialized():
+        return False
     return bool(_dll_or_raise().SRD_PollEvents())
 
 
@@ -669,6 +672,30 @@ def submit_stereo(
     )
 
 
+def present_stereo_frame(
+    left: ArrayLike,
+    right: ArrayLike,
+    *,
+    flip_y: bool = False,
+    track: bool = True,
+) -> bool:
+    """
+    One CPU-stereo frame: ``poll_events`` → optional tracking → ``submit_stereo``.
+
+    Returns ``False`` when the bridge is not initialized or the SRD window
+    should close (stop submitting; still call ``shutdown()`` on exit).
+    """
+    if not poll_events():
+        return False
+    if track:
+        try:
+            update_tracking()
+        except RuntimeError:
+            pass
+    submit_stereo(left, right, flip_y=flip_y)
+    return True
+
+
 def submit_texture(texture_id: int, flip_y: bool = False) -> None:
     """Advanced: submit a GL texture that already lives in the bridge context."""
     _require(
@@ -697,3 +724,14 @@ class SRDSession:
 
     def poll(self) -> bool:
         return poll_events()
+
+    def present(
+        self,
+        left: ArrayLike,
+        right: ArrayLike,
+        *,
+        flip_y: bool = False,
+        track: bool = True,
+    ) -> bool:
+        """See :func:`present_stereo_frame`."""
+        return present_stereo_frame(left, right, flip_y=flip_y, track=track)
