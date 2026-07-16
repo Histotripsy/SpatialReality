@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sony-spatial-reality-python"
+version = "0.1.0"
+description = "Python bindings for the Sony Spatial Reality Display (SRDBridge)"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [
+    { name = "Mahmoud Komaiha" },
+]
+keywords = [
+    "sony",
+    "spatial-reality-display",
+    "srd",
+    "stereo",
+    "pyqtgraph",
+    "openxr",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Graphics :: 3D Rendering",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "numpy",
+]
+
+[project.optional-dependencies]
+gl = [
+    "PyQt5",
+    "pyqtgraph",
+    "PyOpenGL",
+]
+dev = [
+    "build",
+    "twine",
+]
+
+[project.urls]
+Homepage = "https://github.com/Histotripsy/SpatialReality"
+Issues = "https://github.com/Histotripsy/SpatialReality/issues"
+Download = "https://xyn.sony.net/en/developer/setup/spatial-reality-display/download-info"
+
+[tool.setuptools]
+packages = ["spatial_reality"]
+
+[tool.setuptools.package-data]
+spatial_reality = ["py.typed"]

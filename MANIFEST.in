@@ -1,0 +1,25 @@
+# Files included in the source distribution (sdist).
+# The wheel only installs the spatial_reality Python package.
+
+include LICENSE
+include NOTICE
+include README.md
+include CMakeLists.txt
+include MANIFEST.in
+include pyproject.toml
+include XR_API/README.md
+include scripts/build_dll.py
+include scripts/build_dll.bat
+include src/SRDBridge.cpp
+include src/SRDBridge.h
+recursive-include examples *
+recursive-include third_party *
+recursive-include spatial_reality *
+
+# Local / generated — never ship
+prune build
+prune .git
+prune XR_API/include
+prune XR_API/lib
+prune XR_API/bin
+global-exclude __pycache__ *.py[cod] *.dll *.pdb

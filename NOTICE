@@ -1,0 +1,32 @@
+Spatial Reality Display Bridge
+==============================
+
+This repository's original code (Python package ``spatial_reality``,
+``src/SRDBridge.*``, examples, and build scripts) is licensed under the MIT
+License. See LICENSE.
+
+Third-party open-source components
+----------------------------------
+- GLFW — zlib/libpng license (see third_party/GLFW/LICENSE.md)
+- glm — MIT / Happy Bunny License (see third_party/glm/copying.txt)
+- gl3w — Unlicense (see third_party/gl3w/UNLICENSE)
+
+Sony Spatial Reality Display Native API
+---------------------------------------
+This repository does **not** redistribute Sony's Spatial Reality Display Native
+API, headers, libraries, sample application, installer packages, or runtime
+binaries — including via CI downloads, GitHub Releases, or pip wheels.
+
+Those materials are confidential / proprietary to Sony Corporation
+(``Sony CONFIDENTIAL`` / do not copy or redistribute without permission) and
+must be obtained separately by each developer from Sony:
+
+  https://xyn.sony.net/en/developer/setup/spatial-reality-display/download-info
+
+Place the downloaded ``XR_API`` folder at the repository root (see
+``XR_API/README.md``). Use of Sony materials remains subject to Sony's license
+terms. Commercial applications may require a separate Sony commercial license.
+
+Automating a download of ``NativeAPI-*.zip`` (or any Sony installer) and then
+shipping those contents in a public release does **not** make redistribution
+lawful. Each end user should accept Sony's terms and download the SDK themselves.
