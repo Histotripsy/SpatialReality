@@ -647,7 +647,13 @@ def submit_stereo(
     right: ArrayLike,
     flip_y: bool = False,
 ) -> None:
-    """Submit separate left/right eye RGBA frames of equal size."""
+    """
+    Submit separate left/right eye RGBA frames of equal size.
+
+    Pass ``flip_y=True`` when buffers come from ``glReadPixels`` (OpenGL
+    bottom-left origin), matching ``SubmitOpengl`` / the OpenXR swapchain path.
+    CPU-generated top-left images should keep the default ``False``.
+    """
     left_a = _as_rgba_u8(left, "left")
     right_a = _as_rgba_u8(right, "right")
     if left_a.shape != right_a.shape:

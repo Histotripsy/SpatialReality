@@ -285,8 +285,18 @@ def main(argv=None):
         help="Fullscreen Qt preview on a desktop monitor (not the SRD)",
     )
     p.add_argument("--no-preview", action="store_true")
-    p.add_argument("--mirror-x", action="store_true", default=True)
-    p.add_argument("--no-mirror-x", action="store_false", dest="mirror_x")
+    p.add_argument(
+        "--mirror-x",
+        action="store_true",
+        default=True,
+        help="Mirror world X on SRD cameras (default; matches Qt L/R)",
+    )
+    p.add_argument(
+        "--no-mirror-x",
+        action="store_false",
+        dest="mirror_x",
+        help="Disable X mirror if SRD L/R already matches the preview",
+    )
     args = p.parse_args(argv)
 
     rs = str(args.render_scale).strip().lower()

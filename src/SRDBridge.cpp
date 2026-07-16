@@ -298,7 +298,7 @@ void destroyGlResources()
 
 glm::mat4 makeViewMatrix(const SonyOzPosef& pose)
 {
-    // Match NativeAPI sample: flip X/Z, convert meters -> centimeters.
+    // Match NativeAPI sample: reflect through XZ (tracking → OpenGL cm space).
     const auto inv_xz = glm::mat3(
         -1, 0, 0,
         0, 1, 0,
@@ -315,6 +315,9 @@ glm::mat4 makeViewMatrix(const SonyOzPosef& pose)
 
 glm::mat4 makeProjectionMatrix(const SonyOzProjection& proj, float nearClip, float farClip)
 {
+    // Match OpenXR CreateProjectionFov(GRAPHICS_OPENGL): use signed half-angles
+    // as frustum edges (angleLeft/bottom typically ≤ 0, right/top ≥ 0).
+    // NativeAPI GetProjection returns the same convention as XrFovf.
     const float left = nearClip * std::tan(proj.half_angles_left);
     const float right = nearClip * std::tan(proj.half_angles_right);
     const float top = nearClip * std::tan(proj.half_angles_top);
